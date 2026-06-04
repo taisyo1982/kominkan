@@ -3,7 +3,7 @@ name: kouminkan-watch
 on:
   push:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '* 0-9 * * *'
   workflow_dispatch:
 
 jobs:
