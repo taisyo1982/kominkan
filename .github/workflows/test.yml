@@ -1,15 +1,32 @@
-name: test
+name: kouminkan-watch
 
 on:
   push:
-  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
-  test:
+  run:
     runs-on: ubuntu-latest
 
+    env:
+      CHANNEL_ACCESS_TOKEN: ${{ secrets.CHANNEL_ACCESS_TOKEN }}
+      USER_ID: ${{ secrets.USER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+
     steps:
-      - run: echo "EVENT=${{ github.event_name }}"
-      - run: date
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - run: python watch.py
+
+      - run: |
+          echo "EVENT=${{ github.event_name }}"
+          date
