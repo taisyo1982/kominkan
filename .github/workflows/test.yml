@@ -1,13 +1,15 @@
 name: test
 
 on:
+  push:
+  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
-  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-      - run: echo "hello"
+      - run: echo "EVENT=${{ github.event_name }}"
+      - run: date
