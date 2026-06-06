@@ -26,12 +26,12 @@ URLS = [
     "https://www.sagamihara-kouminkan.jp/oosawa-k/",
     "https://www.sagamihara-kouminkan.jp/kamimizo-k/",
     "https://www.sagamihara-kouminkan.jp/hashimoto-k/",
-    "https://www.sagamihara-kouminkan.jp/aihara-k/",
+    "https://www.sagamihara-kouminkan.jp/aihara-k/aihara/right.html",
     "https://www.sagamihara-kouminkan.jp/oyama-k/",
     "https://www.sagamihara-kouminkan.jp/onominami-k/",
     "https://www.sagamihara-kouminkan.jp/araiso-k/",
     "https://www.sagamihara-kouminkan.jp/asamizo-k/",
-    "https://www.sagamihara-kouminkan.jp/tana-k/",
+    "https://www.sagamihara-kouminkan.jp/tana-k/right.htm",
     "https://www.sagamihara-kouminkan.jp/onokita-k/",
     "https://www.sagamihara-kouminkan.jp/ononaka-k/",
     "https://www.sagamihara-kouminkan.jp/hoshigaoka-wp/",
@@ -103,7 +103,7 @@ def send_line(message):
 # HTML解析
 # =====================================
 
-def extract_data(html):
+def extract_data(html, url):
 
     soup = BeautifulSoup(html, "lxml")
 
@@ -113,6 +113,55 @@ def extract_data(html):
             t.decompose()
 
     title = soup.title.text.strip() if soup.title else ""
+
+# =====================================
+# 館別専用処理
+# =====================================
+
+    if "hashimoto-k" in url:
+        target = soup.find(
+            string=lambda s:
+            s and "最新情報一覧" in s
+        )
+        if target:
+            block = target.parent.parent
+            text = block.get_text(
+                "\n",
+                strip=True
+            )
+            pdfs = sorted(
+                set(
+                    a.get("href")
+                    for a in block.select(
+                        'a[href$=".pdf"]'
+                    )
+                )
+            )
+            return title, text, pdfsif "hashimoto-k" in url:
+    elif "aihara-k" in url:
+        tab1 = soup.find("div", id="tab1")
+        if tab1:
+            texts = []
+            for a in tab1.select("a"):
+                txt = a.get_text(" ", strip=True)
+                if len(txt) >= 3:
+            texts.append(txt)
+            text = "\n".join(texts)
+            pdfs = []
+            return title, text, pdfs
+
+    elif "tana-k" in url:
+        tables = soup.find_all("table")
+        if tables:
+            target = tables[0]
+            texts = []
+            for a in target.select("a"):
+                txt = a.get_text(" ", strip=True)
+                if len(txt) >= 3:
+                    texts.append(txt)
+            text = "\n".join(texts)
+            pdfs = []
+            return title, text, pdfs
 
     # =====================================
     # PDF監視
@@ -265,11 +314,11 @@ def get_old_data(sheet, url):
     values = sheet.get_all_values()
 
     for row in reversed(values):
-        if len(row) >= 5 and row[1] == url:
+        if len(row) >= 6 and row[2] == url:
 
             return {
-                "hash": row[2],
-                "text": row[4]
+                "hash": row[3],
+                "text": row[5]
             }
 
     return None
@@ -281,8 +330,11 @@ def get_old_data(sheet, url):
 
 def save_hash(sheet, url, hash_value, memo, text):
 
+    now = datetime.now()
+    
     sheet.append_row([
-        datetime.now().isoformat(),
+        now.strftime("%m/%d"),      # 月日
+        now.strftime("%H:%M:%S"),   # 時刻
         url,
         hash_value,
         memo,
@@ -322,7 +374,7 @@ def run():
 
             print("HTTP:", r.status_code)
 
-            title, text, pdfs = extract_data(r.text)
+            title, text, pdfs = extract_data(r.text, url)
 
             print("TITLE:", title)
             print("TEXT SAMPLE:")
