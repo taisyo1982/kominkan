@@ -318,7 +318,9 @@ def get_old_data(sheet, url):
 
 def save_hash(sheet, url, hash_value, memo, text):
 
-    now = datetime.now()
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Tokyo"))
     
     sheet.append_row([
         now.strftime("%m/%d"),      # 月日
