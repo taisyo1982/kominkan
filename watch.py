@@ -387,6 +387,12 @@ def run():
 
     if notifications:
 
+        print("通知件数:", len(notifications))
+        print("通知文字数:", len(
+            "【公民館監視】\n\n" +
+            "\n\n".join(notifications)
+        ))
+        
         send_line(
             "【公民館監視】\n\n" +
             "\n\n".join(notifications)
