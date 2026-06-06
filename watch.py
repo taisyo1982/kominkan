@@ -146,7 +146,7 @@ def extract_data(html, url):
             for a in tab1.select("a"):
                 txt = a.get_text(" ", strip=True)
                 if len(txt) >= 3:
-            texts.append(txt)
+                    texts.append(txt)
             text = "\n".join(texts)
             pdfs = []
             return title, text, pdfs
