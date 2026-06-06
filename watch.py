@@ -3,6 +3,7 @@ import json
 import hashlib
 import requests
 import gspread
+import difflib
 
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -343,6 +344,11 @@ def run():
 
             if old_data:
                 old_hash = old_data["hash"]
+            
+            old_text = ""
+
+            if old_data:
+                old_text = old_data["text"]
 
             print("OLD:", old_hash)
             print("NEW:", new_hash)
@@ -352,25 +358,46 @@ def run():
                 continue
 
             if old_hash is None:
-                status = "初回登録"
-            else:
-                status = "更新検知"
+                
+                save_hash(
+                    sheet,
+                    url,
+                    new_hash,
+                    "初回登録",
+                    text
+                )
+                
+                print("初回登録")
+                continue
+                
+            diff = "\n".join(
+                difflib.unified_diff(
+                    old_text.splitlines(),
+                    text.splitlines(),
+                    fromfile="before",
+                    tofile="after",
+                    lineterm=""
+                )
+            )
 
+            if not diff.strip():
+                print("差分なし")
+                continue
+            
             save_hash(
                 sheet,
                 url,
                 new_hash,
-                status,
+                "更新検知",
                 text
             )
-            old_data = get_old_data(sheet, url)
 
             message = (
-                f"{status}\n"
+                f"更新検知\n"
                 f"{title}\n"
                 f"{url}\n\n"
-                f"検知内容:\n"
-                f"{text[:1000]}"
+                f"差分:\n"
+                f"{diff[:3000]}"
             )
 
             notifications.append(message)
