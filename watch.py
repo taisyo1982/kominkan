@@ -264,8 +264,12 @@ def get_old_hash(sheet, url):
     values = sheet.get_all_values()
 
     for row in reversed(values):
-        if len(row) >= 3 and row[1] == url:
-            return row[2]
+        if len(row) >= 5 and row[1] == url:
+
+            return {
+                "hash": row[2],
+                "text": row[4]
+            }
 
     return None
 
@@ -280,7 +284,8 @@ def save_hash(sheet, url, hash_value, memo):
         datetime.now().isoformat(),
         url,
         hash_value,
-        memo
+        memo,
+        text[:5000]
     ])
 
 
@@ -325,7 +330,7 @@ def run():
 
             new_hash = make_hash(
                 title,
-                "",
+                text,
                 pdfs
             )
 
@@ -346,16 +351,31 @@ def run():
             else:
                 status = "更新検知"
 
-            save_hash(
+           save_hash(
                 sheet,
                 url,
                 new_hash,
-                status
+                status,
+                text
+            )
+            old_data = get_old_data(sheet, url)
+
+            old_text = ""
+
+            if old_data:
+                old_text = old_data["text"]
+
+            message = (
+                f"{status}\n"
+                f"{title}\n"
+                f"{url}\n\n"
+                f"検知内容:\n"
+                f"{text[:1000]}"
             )
 
-            notifications.append(
-                f"{status}\n{url}"
-            )
+            notifications.append(message)
+
+
 
         except Exception as e:
 
