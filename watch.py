@@ -372,25 +372,24 @@ def run():
             title = lines[0] if lines else "公民館更新"
             post_to_wordpress(title[:100], n[:4000])
 
+def test_wordpress_post():
+    title = "テスト投稿（監視システム）"
+    content = (
+        "これはテスト投稿です。\n\n"
+        "・WordPress連携確認\n"
+        "・API接続確認\n"
+        "・自動投稿テスト\n\n"
+        f"日時: {datetime.now()}"
+    )
+
+    result = post_to_wordpress(title, content)
+
+    print("テスト結果:", result)
 
 # =====================================
 # 実行
 # =====================================
 
 if __name__ == "__main__":
-    test_wordpress_post():
-    title = "テスト投稿（監視システム）"
-    content = """
-これはテスト投稿です。
-
-・WordPress連携確認
-・API接続確認
-・自動投稿テスト
-
-日時: """ + str(datetime.now())
-
-    result = post_to_wordpress(title, content)
-
-    print("テスト結果:", result)
-    
+    test_wordpress_post()
     run()
