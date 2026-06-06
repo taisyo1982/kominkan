@@ -259,7 +259,7 @@ def make_hash(title, text, pdfs):
 # 前回ハッシュ取得
 # =====================================
 
-def get_old_hash(sheet, url):
+def get_old_data(sheet, url):
 
     values = sheet.get_all_values()
 
@@ -334,10 +334,15 @@ def run():
                 pdfs
             )
 
-            old_hash = get_old_hash(
+            old_data = get_old_data(
                 sheet,
                 url
             )
+
+            old_hash = None
+
+            if old_data:
+                old_hash = old_data["hash"]
 
             print("OLD:", old_hash)
             print("NEW:", new_hash)
@@ -359,11 +364,6 @@ def run():
                 text
             )
             old_data = get_old_data(sheet, url)
-
-            old_text = ""
-
-            if old_data:
-                old_text = old_data["text"]
 
             message = (
                 f"{status}\n"
