@@ -351,7 +351,7 @@ def run():
             else:
                 status = "更新検知"
 
-           save_hash(
+            save_hash(
                 sheet,
                 url,
                 new_hash,
