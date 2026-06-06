@@ -168,8 +168,9 @@ def send_line(message):
 
 def post_to_wordpress(title, content):
 
-    if not WP_URL:
-        return False
+    WP_URL = os.environ["WP_URL"]
+    WP_USER = os.environ["WP_USER"]
+    WP_APP_PASS = os.environ["WP_APP_PASS"]
 
     payload = {
         "title": title,
@@ -178,13 +179,18 @@ def post_to_wordpress(title, content):
     }
 
     r = requests.post(
-        WP_URL + "/wp-json/wp/v2/posts",
+        WP_URL.rstrip("/") + "/wp-json/wp/v2/posts",
         auth=(WP_USER, WP_APP_PASS),
         json=payload,
         timeout=30
     )
 
-    print("WP:", r.status_code)
+    print("===== WP DEBUG =====")
+    print("URL:", r.url)
+    print("STATUS:", r.status_code)
+    print("RESPONSE:", r.text)
+    print("====================")
+
     return r.status_code == 201
 
 
@@ -374,17 +380,20 @@ def run():
 
 def test_wordpress_post():
     title = "テスト投稿（監視システム）"
-    content = (
-        "これはテスト投稿です。\n\n"
-        "・WordPress連携確認\n"
-        "・API接続確認\n"
-        "・自動投稿テスト\n\n"
-        f"日時: {datetime.now()}"
-    )
+    content = "テスト"
+
+    result = post_to_wordpress(title, content)
+
+    return result
 
     result = post_to_wordpress(title, content)
 
     print("テスト結果:", result)
+    print("WP_URL:", WP_URL)
+    print("USER:", WP_USER)
+    print("PASS長:", len(WP_APP_PASS))
+    print("WP STATUS:", r.status_code)
+    print("WP RESPONSE:", r.text)
 
 # =====================================
 # 実行
