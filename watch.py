@@ -137,7 +137,8 @@ def extract_data(html, url):
                     )
                 )
             )
-            return title, text, pdfsif "hashimoto-k" in url:
+            return title, text, pdfs
+            
     elif "aihara-k" in url:
         tab1 = soup.find("div", id="tab1")
         if tab1:
