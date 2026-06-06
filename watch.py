@@ -278,7 +278,7 @@ def get_old_hash(sheet, url):
 # 保存
 # =====================================
 
-def save_hash(sheet, url, hash_value, memo):
+def save_hash(sheet, url, hash_value, memo, text):
 
     sheet.append_row([
         datetime.now().isoformat(),
