@@ -4,6 +4,7 @@ import hashlib
 import requests
 import gspread
 import difflib
+import base64
 from bs4 import BeautifulSoup
 from datetime import datetime
 from google.oauth2.service_account import Credentials
@@ -172,6 +173,15 @@ def post_to_wordpress(title, content):
     WP_USER = os.environ["WP_USER"]
     WP_APP_PASS = os.environ["WP_APP_PASS"]
 
+    token = base64.b64encode(
+        f"{WP_USER}:{WP_APP_PASS}".encode()
+    ).decode()
+
+    headers = {
+        "Authorization": f"Basic {token}",
+        "Content-Type": "application/json"
+    }
+
     payload = {
         "title": title,
         "content": content,
@@ -179,20 +189,20 @@ def post_to_wordpress(title, content):
     }
 
     r = requests.post(
-        WP_URL.rstrip("/") + "/wp-json/wp/v2/posts",
-        auth=(WP_USER, WP_APP_PASS),
+        WP_URL + "/wp-json/wp/v2/posts",
+        headers=headers,
         json=payload,
         timeout=30
     )
 
+    print("WP:", r.status_code, r.text)
     print("===== WP DEBUG =====")
     print("URL:", r.url)
     print("STATUS:", r.status_code)
     print("RESPONSE:", r.text)
     print("====================")
 
-    return r.status_code == 201
-
+    return r.status_code in [200, 201]
 
 # =====================================
 # HTML解析
