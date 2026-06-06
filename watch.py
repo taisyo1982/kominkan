@@ -95,9 +95,9 @@ def send_line(message):
         json=payload,
         timeout=30
     )
-
     print("LINE:", r.status_code)
-
+    print("送信文字数:", len(message))
+    print("レスポンス:", r.text)
 
 # =====================================
 # HTML解析
