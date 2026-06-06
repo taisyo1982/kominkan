@@ -119,25 +119,20 @@ def extract_data(html, url):
 # =====================================
 
     if "hashimoto-k" in url:
-        target = soup.find(
-            string=lambda s:
-            s and "最新情報一覧" in s
+        texts = []
+        for a in soup.select("a"):
+            txt = a.get_text(" ", strip=True)
+            if len(txt) >= 5:
+                texts.append(txt)
+        text = "\n".join(texts[:100])
+        pdfs = sorted(
+            set(
+                a.get("href")
+                for a in soup.select('a[href$=".pdf"]')
+                if a.get("href")
+            )
         )
-        if target:
-            block = target.parent.parent
-            text = block.get_text(
-                "\n",
-                strip=True
-            )
-            pdfs = sorted(
-                set(
-                    a.get("href")
-                    for a in block.select(
-                        'a[href$=".pdf"]'
-                    )
-                )
-            )
-            return title, text, pdfs
+        return title, text, pdfs
             
     elif "aihara-k" in url:
         tab1 = soup.find("div", id="tab1")
@@ -152,18 +147,10 @@ def extract_data(html, url):
             return title, text, pdfs
 
     elif "tana-k" in url:
-        tables = soup.find_all("table")
-        if tables:
-            target = tables[0]
-            texts = []
-            for a in target.select("a"):
-                txt = a.get_text(" ", strip=True)
-                if len(txt) >= 3:
-                    texts.append(txt)
-            text = "\n".join(texts)
-            pdfs = []
-            return title, text, pdfs
-
+        text = soup.get_text("\n", strip=True)
+        pdfs = []
+        return title, text[:3000], pdfs
+        
     # =====================================
     # PDF監視
     # =====================================
