@@ -4,10 +4,74 @@ import hashlib
 import requests
 import gspread
 import difflib
-
 from bs4 import BeautifulSoup
 from datetime import datetime
 from google.oauth2.service_account import Credentials
+
+# =====================================
+# ① 意味差分フィルタ
+# =====================================
+
+def semantic_filter(text):
+    keywords = [
+        "募集", "お知らせ", "講座", "イベント",
+        "開催", "中止", "変更", "事業", "館報",
+        "参加者", "申込", "受付", "図書"
+    ]
+
+    lines = []
+
+    for line in text.split("\n"):
+        line = line.strip()
+
+        if len(line) < 6:
+            continue
+        if len(line) > 120:
+            continue
+
+        if any(k in line for k in keywords):
+            if len(line) >= 10:
+                lines.append(line)
+
+    return "\n".join(dict.fromkeys(lines))
+
+
+# =====================================
+# ② テンプレ判定モデル
+# =====================================
+
+def detect_template_type(soup, url):
+
+    wp_score = 0
+    if soup.select(".wp-block-post-title"):
+        wp_score += 3
+    if soup.select(".entry-title"):
+        wp_score += 2
+    if "wp" in url:
+        wp_score += 2
+
+    static_score = 0
+    if soup.find("table"):
+        static_score += 1
+    if soup.find("main") or soup.find("#content"):
+        static_score += 1
+    if ".htm" in url:
+        static_score += 2
+
+    civic_score = 0
+    text = soup.get_text()
+    civic_keywords = ["公民館", "講座", "館報", "自主事業"]
+    civic_score += sum(1 for k in civic_keywords if k in text)
+
+    if wp_score >= 3 or "wp" in url:
+        return "wordpress"
+    if civic_score >= 5:
+        return "civic_dynamic"
+    if static_score >= 2:
+        return "static_html"
+
+    return "unknown"
+
 
 # =====================================
 # 環境変数
@@ -17,6 +81,11 @@ CHANNEL_ACCESS_TOKEN = os.environ["CHANNEL_ACCESS_TOKEN"]
 USER_ID = os.environ["USER_ID"]
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 SHEET_ID = os.environ["SHEET_ID"]
+
+WP_URL = os.environ.get("WP_URL")
+WP_USER = os.environ.get("WP_USER")
+WP_APP_PASS = os.environ.get("WP_APP_PASS")
+
 
 # =====================================
 # 監視対象
@@ -52,19 +121,17 @@ URLS = [
     "https://www.sagamihara-kouminkan.jp/f-chuuou-wp/"
 ]
 
+
 # =====================================
 # Sheets接続
 # =====================================
 
 def get_sheet():
-
     creds = Credentials.from_service_account_info(
         json.loads(GOOGLE_SERVICE_ACCOUNT_JSON),
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
-
     gc = gspread.authorize(creds)
-
     return gc.open_by_key(SHEET_ID).sheet1
 
 
@@ -73,7 +140,6 @@ def get_sheet():
 # =====================================
 
 def send_line(message):
-
     headers = {
         "Authorization": f"Bearer {CHANNEL_ACCESS_TOKEN}",
         "Content-Type": "application/json"
@@ -82,10 +148,7 @@ def send_line(message):
     payload = {
         "to": USER_ID,
         "messages": [
-            {
-                "type": "text",
-                "text": message[:5000]
-            }
+            {"type": "text", "text": message[:5000]}
         ]
     }
 
@@ -95,9 +158,35 @@ def send_line(message):
         json=payload,
         timeout=30
     )
+
     print("LINE:", r.status_code)
-    print("送信文字数:", len(message))
-    print("レスポンス:", r.text)
+
+
+# =====================================
+# WordPress投稿（下書き）
+# =====================================
+
+def post_to_wordpress(title, content):
+
+    if not WP_URL:
+        return False
+
+    payload = {
+        "title": title,
+        "content": content,
+        "status": "draft"
+    }
+
+    r = requests.post(
+        WP_URL + "/wp-json/wp/v2/posts",
+        auth=(WP_USER, WP_APP_PASS),
+        json=payload,
+        timeout=30
+    )
+
+    print("WP:", r.status_code)
+    return r.status_code == 201
+
 
 # =====================================
 # HTML解析
@@ -107,224 +196,111 @@ def extract_data(html, url):
 
     soup = BeautifulSoup(html, "lxml")
 
-    # 不要タグ削除
     for tag in ["script", "style", "noscript"]:
         for t in soup.find_all(tag):
             t.decompose()
 
     title = soup.title.text.strip() if soup.title else ""
+    template_type = detect_template_type(soup, url)
 
-# =====================================
-# 館別専用処理
-# =====================================
+    wp_selectors = [
+        "article h1","article h2","article h3",
+        ".entry-title",".post-title",
+        ".wp-block-post-title",
+        ".elementor-post__title",
+        ".blog-title",".news-title"
+    ]
 
-    if "hashimoto-k" in url:
-        texts = []
-        for a in soup.select("a"):
-            txt = a.get_text(" ", strip=True)
-            if len(txt) >= 5:
-                texts.append(txt)
-        text = "\n".join(texts[:100])
-        pdfs = sorted(
-            set(
-                a.get("href")
-                for a in soup.select('a[href$=".pdf"]')
-                if a.get("href")
-            )
-        )
-        return title, text, pdfs
-            
-    elif "aihara-k" in url:
-        tab1 = soup.find("div", id="tab1")
-        if tab1:
-            texts = []
-            for a in tab1.select("a"):
-                txt = a.get_text(" ", strip=True)
-                if len(txt) >= 3:
-                    texts.append(txt)
-            text = "\n".join(texts)
-            pdfs = []
-            return title, text, pdfs
+    # =========================
+    # WP
+    # =========================
+    if template_type == "wordpress":
 
-    elif "tana-k" in url:
-        text = soup.get_text("\n", strip=True)
-        pdfs = []
-        return title, text[:3000], pdfs
-        
-    # =====================================
-    # PDF監視
-    # =====================================
+        wp_posts = []
+        for selector in wp_selectors:
+            for tag in soup.select(selector):
+                txt = tag.get_text(" ", strip=True)
+                if 5 <= len(txt) <= 100:
+                    wp_posts.append(txt)
 
-    pdfs = sorted(
-        set(
+        text = "\n".join(dict.fromkeys(wp_posts)[:50])
+        text = semantic_filter(text)
+
+        pdfs = list(set(
             a.get("href")
             for a in soup.select('a[href$=".pdf"]')
             if a.get("href")
-        )
-    )
-
-    # =====================================
-    # WordPress投稿タイトル監視
-    # =====================================
-
-    wp_posts = []
-
-    wp_selectors = [
-        "article h1",
-        "article h2",
-        "article h3",
-        ".entry-title",
-        ".post-title",
-        ".wp-block-post-title",
-        ".elementor-post__title",
-        ".blog-title",
-        ".news-title"
-    ]
-
-    for selector in wp_selectors:
-
-        for tag in soup.select(selector):
-
-            txt = tag.get_text(" ", strip=True)
-
-            if len(txt) < 5:
-                continue
-
-            if len(txt) > 100:
-                continue
-
-            wp_posts.append(txt)
-
-    wp_posts = list(dict.fromkeys(wp_posts))
-
-    # 投稿タイトルが複数取れたらWPと判定
-    if len(wp_posts) >= 3:
-
-        text = "\n".join(wp_posts[:50])
+        ))
 
         return title, text, pdfs
 
-    # =====================================
-    # 静的HTML監視
-    # =====================================
+    # =========================
+    # 館別
+    # =========================
+    if "hashimoto-k" in url:
+        text = "\n".join(
+            a.get_text(" ", strip=True)
+            for a in soup.select("a")
+            if len(a.get_text(strip=True)) >= 5
+        )
+        return title, semantic_filter(text), []
 
-    target = (
-        soup.select_one("main")
-        or soup.select_one("article")
-        or soup.select_one("#content")
-        or soup.select_one(".content")
-        or soup
-    )
+    if "aihara-k" in url:
+        tab1 = soup.find("div", id="tab1")
+        if tab1:
+            text = "\n".join(
+                a.get_text(" ", strip=True)
+                for a in tab1.select("a")
+            )
+            return title, semantic_filter(text), []
 
-    keywords = [
-        "募集",
-        "お知らせ",
-        "新着",
-        "中止",
-        "開催",
-        "講座",
-        "イベント",
-        "事業",
-        "館報",
-        "図書室"
-    ]
+    if "tana-k" in url:
+        text = soup.get_text("\n", strip=True)
+        return title, semantic_filter(text)[:3000], []
 
-    date_keywords = [
-        "令和",
-        "R9",
-        "R8",
-        "R7",
-        "2027",
-        "2026",
-        "2025"
-    ]
+    # =========================
+    # 汎用HTML
+    # =========================
+    target = soup.select_one("main") or soup.select_one("article") or soup
 
-    important = []
+    keywords = ["募集","お知らせ","新着","中止","開催","講座","イベント","事業","館報","図書室"]
+    date_keywords = ["令和","R9","R8","R7","2027","2026","2025"]
 
+    lines = []
     for line in target.get_text("\n").split("\n"):
-
         line = line.strip()
+        if 8 <= len(line) <= 100:
+            if any(k in line for k in keywords + date_keywords):
+                lines.append(line)
 
-        if not line:
-            continue
-
-        # 短すぎる行除外
-        if len(line) < 8:
-            continue
-
-        # 長すぎる行除外
-        if len(line) > 100:
-            continue
-
-        # キーワード行
-        if any(k in line for k in keywords):
-            important.append(line)
-            continue
-
-        # 日付行
-        if any(k in line for k in date_keywords):
-            important.append(line)
-            continue
-
-    important = list(dict.fromkeys(important))
-
-    text = "\n".join(important[:100])
-
-    return title, text, pdfs
+    return title, semantic_filter("\n".join(lines)), []
 
 
 # =====================================
-# ハッシュ生成
+# ハッシュ
 # =====================================
 
 def make_hash(title, text, pdfs):
-
-    src = json.dumps(
-        {
-            "text": text,
-            "pdfs": pdfs
-        },
-        ensure_ascii=False,
-        sort_keys=True
-    )
-
-    return hashlib.sha256(
-        src.encode("utf-8")
-    ).hexdigest()
+    src = json.dumps({"text": text, "pdfs": pdfs}, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(src.encode()).hexdigest()
 
 
 # =====================================
-# 前回ハッシュ取得
+# Sheet
 # =====================================
 
 def get_old_data(sheet, url):
-
-    values = sheet.get_all_values()
-
-    for row in reversed(values):
+    for row in reversed(sheet.get_all_values()):
         if len(row) >= 6 and row[2] == url:
-
-            return {
-                "hash": row[3],
-                "text": row[5]
-            }
-
+            return {"hash": row[3], "text": row[5]}
     return None
 
 
-# =====================================
-# 保存
-# =====================================
-
 def save_hash(sheet, url, hash_value, memo, text):
-
-    from datetime import datetime, timedelta
-    from zoneinfo import ZoneInfo
-    now = datetime.now(ZoneInfo("Asia/Tokyo"))
-    
+    now = datetime.now()
     sheet.append_row([
-        now.strftime("%m/%d"),      # 月日
-        now.strftime("%H:%M:%S"),   # 時刻
+        now.strftime("%m/%d"),
+        now.strftime("%H:%M:%S"),
         url,
         hash_value,
         memo,
@@ -338,136 +314,63 @@ def save_hash(sheet, url, hash_value, memo, text):
 
 def run():
 
-    print("=" * 50)
-    print("監視開始")
-    print("=" * 50)
-
     sheet = get_sheet()
-
     notifications = []
 
     for url in URLS:
 
         try:
-
-            print("取得開始:", url)
-
-            r = requests.get(
-                url,
-                timeout=20,
-                headers={
-                    "User-Agent": "Mozilla/5.0"
-                }
-            )
-
+            r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
             r.encoding = r.apparent_encoding
-
-            print("HTTP:", r.status_code)
 
             title, text, pdfs = extract_data(r.text, url)
 
-            print("TITLE:", title)
-            print("TEXT SAMPLE:")
-            print(text[:500])
-            print("PDF:", pdfs[:10])
+            # ノイズ防止（ここが重要）
+            if len(text) < 50:
+                continue
 
-            new_hash = make_hash(
-                title,
-                text,
-                pdfs
-            )
+            new_hash = make_hash(title, text, pdfs)
+            old = get_old_data(sheet, url)
 
-            old_data = get_old_data(
-                sheet,
-                url
-            )
-
-            old_hash = None
-
-            if old_data:
-                old_hash = old_data["hash"]
-            
-            old_text = ""
-
-            if old_data:
-                old_text = old_data["text"]
-
-            print("OLD:", old_hash)
-            print("NEW:", new_hash)
+            old_hash = old["hash"] if old else None
+            old_text = old["text"] if old else ""
 
             if old_hash == new_hash:
-                print("変更なし")
                 continue
 
             if old_hash is None:
-                
-                save_hash(
-                    sheet,
-                    url,
-                    new_hash,
-                    "初回登録",
-                    text
-                )
-                
-                print("初回登録")
+                save_hash(sheet, url, new_hash, "初回登録", text)
                 continue
-                
+
             diff = "\n".join(
                 difflib.unified_diff(
                     old_text.splitlines(),
                     text.splitlines(),
                     fromfile="before",
-                    tofile="after",
-                    lineterm=""
+                    tofile="after"
                 )
             )
 
             if not diff.strip():
-                print("差分なし")
                 continue
-            
-            save_hash(
-                sheet,
-                url,
-                new_hash,
-                "更新検知",
-                text
+
+            save_hash(sheet, url, new_hash, "更新検知", text)
+
+            notifications.append(
+                f"{title}\n{url}\n\n{diff[:3000]}"
             )
-
-            message = (
-                f"更新検知\n"
-                f"{title}\n"
-                f"{url}\n\n"
-                f"差分:\n"
-                f"{diff[:3000]}"
-            )
-
-            notifications.append(message)
-
-
 
         except Exception as e:
-
-            error_msg = f"ERROR\n{url}\n{str(e)}"
-
-            print(error_msg)
-
-            notifications.append(error_msg)
+            notifications.append(f"ERROR\n{url}\n{e}")
 
     if notifications:
+        msg = "【公民館監視】\n\n" + "\n\n".join(notifications)
+        send_line(msg)
 
-        print("通知件数:", len(notifications))
-        print("通知文字数:", len(
-            "【公民館監視】\n\n" +
-            "\n\n".join(notifications)
-        ))
-        
-        send_line(
-            "【公民館監視】\n\n" +
-            "\n\n".join(notifications)
-        )
-
-    print("監視終了")
+        for n in notifications:
+            lines = n.split("\n")
+            title = lines[0] if lines else "公民館更新"
+            post_to_wordpress(title[:100], n[:4000])
 
 
 # =====================================
@@ -475,4 +378,19 @@ def run():
 # =====================================
 
 if __name__ == "__main__":
+    test_wordpress_post():
+    title = "テスト投稿（監視システム）"
+    content = """
+これはテスト投稿です。
+
+・WordPress連携確認
+・API接続確認
+・自動投稿テスト
+
+日時: """ + str(datetime.now())
+
+    result = post_to_wordpress(title, content)
+
+    print("テスト結果:", result)
+    
     run()
